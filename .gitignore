@@ -133,13 +133,13 @@ dmypy.json
 runs/
 models/
 figs/
-data/
 ignore/
 src/mace/old/
 ipynbs/
 ae-models/
 latentdyn/
 input/ignore/
+mace-env/
 
 # files
 MACE.md
