@@ -328,11 +328,11 @@ class CSEmod():
             self.name = path[-43:-18]
             inp_path = self.path[:-26]+ 'inputChemistry_'+self.name+'.txt'
         
-        if chempy == True:
-            self.path = path[:-17]
-            self.model = path[21:-51]
-            self.name = path[-43:-18]
-            inp_path = self.path[:-26]+ 'inputChemistry_'+self.name+'.txt'
+        #if chempy == True:
+        #    self.path = path[:-17]
+        #    self.model = path[21:-51]
+        #    self.name = path[-43:-18]
+        #    inp_path = self.path[:-26]+ 'inputChemistry_'+self.name+'.txt'
 
         if inpackage:
             if data == 'test':
