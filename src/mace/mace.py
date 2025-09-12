@@ -33,8 +33,8 @@ class Solver(nn.Module):
                  path,
                  DEVICE,
                  g_nn = False, 
-                 atol = 1e-5, rtol = 1e-2):
-    # def __init__(self,  p_dim, z_dim, DEVICE, n_dim, nb_hidden, ae_type, g_nn = False, atol = 1e-5, rtol = 1e-2):
+                 atol = 1e-5, rtol = 1e-25):
+    # def __init__(self,  p_dim, z_dim, DEVICE, n_dim, nb_hidden, ae_type, g_nn = False, atol = 1e-5, rtol = 1e-25):
         '''
         Initialising the Solver class with the hyperparameters.
 
