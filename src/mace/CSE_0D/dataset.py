@@ -21,6 +21,7 @@ NOTE:
 This script only works for this specific dataset.
 
 '''
+import json
 
 import numpy as np
 import torch
@@ -119,13 +120,13 @@ class CSEdata(Dataset):
         self.M = np.load(loc + 'data/M_rate16.npy')
 
         ## These values are the results from a search through the full dataset; see 'minmax.json' file
-        self.logρ_min = np.log10(0.008223)
-        self.logρ_max = np.log10(5009000000.0)
+        self.logrho_min = np.log10(0.008223)
+        self.logrho_max = np.log10(5009000000.0)
         self.logT_min = np.log10(10.)
         self.logT_max = np.log10(1851.0)
         y = 1.e-100  ## this number is added to xi, since it contains zeros
-        self.logδ_min = np.log10(y)
-        self.logδ_max = np.log10(y + 0.9999)
+        self.logdelta_min = np.log10(y)
+        self.logdelta_max = np.log10(y + 0.9999)
         self.Av_min = np.log10(2.141e-05)
         self.Av_max = np.log10(1246.0)
         self.dt_max = 434800000000.0
@@ -134,11 +135,11 @@ class CSEdata(Dataset):
         self.n_max = np.log10(0.85e-1)  ## initial abundance He
 
         self.mins = np.array([
-            self.logρ_min, self.logT_min, self.logδ_min, self.Av_min,
+            self.logrho_min, self.logT_min, self.logdelta_min, self.Av_min,
             self.n_min, self.dt_fract
         ])
         self.maxs = np.array([
-            self.logρ_max, self.logT_max, self.logδ_max, self.Av_max,
+            self.logrho_max, self.logT_max, self.logdelta_max, self.Av_max,
             self.n_max, self.dt_max
         ])
 
@@ -211,7 +212,7 @@ class CSEdata(Dataset):
             p_transf), torch.from_numpy(delta_t_transf)
 
 
-def get_data(nb_samples, dt_fract, nb_test, inpackage, batch_size, kwargs):
+def get_data(data_type,nb_samples, dt_fract, nb_test, inpackage, batch_size, kwargs):
     '''
     Prepare the data for training and validating the emulator.
 
@@ -227,13 +228,20 @@ def get_data(nb_samples, dt_fract, nb_test, inpackage, batch_size, kwargs):
     kwargs = {'num_workers': 1, 'pin_memory': True} for the DataLoader        
     '''
     ## Make PyTorch dataset
-    train = CSEdata(nb_samples=nb_samples,
+    if data_type == '1DCSE':
+        data_class = CSEdata
+    elif data_type == 'Phantom':
+        data_class = PhantomData
+    else:
+        print('Error: data_type not recognised (Phantom or 1DCSE), defaulting to 1DCSE')
+        data_class = CSEdata
+    train = data_class(nb_samples=nb_samples,
                     dt_fract=dt_fract,
                     nb_test=nb_test,
                     inpackage=inpackage,
                     train=True,
                     datapath='train')
-    valid = CSEdata(nb_samples=nb_samples,
+    valid = data_class(nb_samples=nb_samples,
                     dt_fract=dt_fract,
                     nb_test=nb_test,
                     inpackage=inpackage,
@@ -261,7 +269,8 @@ def get_data(nb_samples, dt_fract, nb_test, inpackage, batch_size, kwargs):
     return train, valid, data_loader, test_loader
 
 
-def get_test_data(testpath,
+def get_test_data(data_type,
+                  testpath,
                   meta,
                   inpackage=False,
                   train=False,
@@ -277,8 +286,18 @@ def get_test_data(testpath,
         - testpath [str]: path of the 1D test model
         - meta [dict]: meta data from the training setup
     '''
-
-    data = CSEdata(nb_samples=meta['nb_samples'],
+    if data_type == '1DCSE':
+        data_class = CSEdata
+        mod_class = CSEmod
+    elif data_type == 'Phantom':
+        data_class = PhantomData
+        mod_class = Phantommod
+    else:
+        print('Error: data_type not recognised, defaulting to 1DCSE')
+        data_class = CSEdata
+        mod_class = CSEmod
+    
+    data = data_class(nb_samples=meta['nb_samples'],
                    dt_fract=meta['dt_fract'],
                    nb_test=meta['nb_test'],
                    train=train,
@@ -286,18 +305,19 @@ def get_test_data(testpath,
                    cutoff=1e-20,
                    inpackage=inpackage)
 
-    mod = CSEmod(testpath, inpackage, datapath)
+    mod = mod_class(testpath, inpackage, datapath)
 
     if inpackage:
         input = mod.get_input()
 
     delta_t, n, p = mod.split_in_0D()
-
-    name = {
-        'path': testpath[49:-57],
-        'name': mod.name,
-        'Tstar': mod.Tstar,
-        'Mdot': mod.Mdot,
+    if data_class == CSEdata:
+        # specifics of the 1DCSE model
+        name = {
+            'path': testpath[49:-57],
+            'name': mod.name,
+            'Tstar': mod.Tstar,
+            'Mdot': mod.Mdot,
         'v': mod.v,
         'eps': mod.eps
     }
@@ -396,7 +416,7 @@ class CSEmod():
                 inp_path = self.path + 'input.txt'
             if data == 'train':
                 parentpath = str(Path(__file__).parent)[:-15]
-                self.path = parentpath + 'data/train/' + path + '/'
+                self.path = parentpath + 'data/train/' + path[:-18] + '/'
                 self.model = self.path
                 self.name = self.path
                 inp_path = self.path + 'input.txt'
@@ -612,7 +632,6 @@ class Phantommod():
             self.path = '/STER/silkem/CHEM/out/' + path[34:-17]
             self.model = path[34:-51]
             self.name = path[-43:-18]
-            inp_path = self.path[:-26] + 'inputChemistry_' + self.name + '.txt'
 
         if inpackage:
             if data == 'test':
@@ -628,6 +647,7 @@ class Phantommod():
                 self.name = self.path
 
         ## retrieve abundances and physical parameters
+        print('Loading phantom+krome model from:', self.path)
         abs = read_data_phantom(self.path)
         self.time = abs[:, 0]
         self.radius, self.dens, self.temp, self.mu, self.Av, self.xi = abs[:,
@@ -737,7 +757,6 @@ def read_data_phantom(file_name):
                 data.append([float(_) for _ in line.strip().split()])
     return np.array(data)
 
-
 class PhantomData(Dataset):
     '''
     Class to initialise the dataset to train & test emulator with phantom+Krome 
@@ -796,16 +815,14 @@ class PhantomData(Dataset):
         loc = str(Path().cwd()) + '/'
         paths = np.loadtxt(loc + 'data/paths_train_data.txt', dtype=str)
         print('Found paths:', len(paths))
-        print(paths)
         ## select a certain number of paths, given by nb_samples
         np.random.seed(0)
         self.idxs = utils.generate_random_numbers(nb_samples, 0, len(paths))
         self.path = paths[self.idxs]
+        print(self.path)
 
         ## select a random test path, that is not in the training set
-        # self.test_idx = utils.generate_random_numbers(1, 0, len(paths))
         self.testpath = list()
-        # self.testpath.append(paths[self.test_idx][0])
         self.nb_test = nb_test
         print('number of test paths:', nb_test)
         count = 0
@@ -817,31 +834,31 @@ class PhantomData(Dataset):
             print('count:', count, '\r', end='')
         print('Selected test paths:', len(self.testpath))
 
-        # print('test path:', self.testpath)
-
         self.M = np.load(loc + 'data/M_rate16.npy')
 
         ## These values are the results from a search through the full dataset; see 'minmax.json' file
-        self.logρ_min = np.log10(0.008223)
-        self.logρ_max = np.log10(5009000000.0)
-        self.logT_min = np.log10(10.)
-        self.logT_max = np.log10(1851.0)
+        with open(loc + 'data/minmax.json', 'r') as f:
+            minmax = json.load(f)
+        self.logrho_min = np.log10(minmax['dens_min'])
+        self.logrho_max = np.log10(minmax['dens_max'])
+        self.logT_min = np.log10(minmax['temp_min'])
+        self.logT_max = np.log10(minmax['temp_max'])
         y = 1.e-100  ## this number is added to xi, since it contains zeros
-        self.logδ_min = np.log10(y)
-        self.logδ_max = np.log10(y + 0.9999)
-        self.Av_min = np.log10(2.141e-05)
-        self.Av_max = np.log10(1246.0)
-        self.dt_max = 434800000000.0
+        self.logdelta_min = np.log10(y + minmax['delta_min'])
+        self.logdelta_max = np.log10(y + minmax['delta_max'])
+        self.Av_min = np.log10(minmax['Av_min'])
+        self.Av_max = np.log10(minmax['Av_max'])
+        self.dt_max = minmax['dt_max']
         self.dt_fract = dt_fract
         self.n_min = np.log10(cutoff)
         self.n_max = np.log10(0.85e-1)  ## initial abundance He
 
         self.mins = np.array([
-            self.logρ_min, self.logT_min, self.logδ_min, self.Av_min,
+            self.logrho_min, self.logT_min, self.logdelta_min, self.Av_min,
             self.n_min, self.dt_fract
         ])
         self.maxs = np.array([
-            self.logρ_max, self.logT_max, self.logδ_max, self.Av_max,
+            self.logrho_max, self.logT_max, self.logdelta_max, self.Av_max,
             self.n_max, self.dt_max
         ])
 
@@ -886,8 +903,7 @@ class PhantomData(Dataset):
 
         Returns the preprocessed data in torch tensors.
         '''
-
-        mod = CSEmod(self.path[idx],
+        mod = Phantommod(self.path[idx],
                      inpackage=self.inpackage,
                      data=self.datapath)
 
