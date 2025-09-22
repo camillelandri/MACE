@@ -22,6 +22,7 @@ This script only works for this specific dataset.
 
 '''
 import json
+import os
 
 import numpy as np
 import torch
@@ -97,7 +98,12 @@ class CSEdata(Dataset):
 
         ## select a certain number of paths, given by nb_samples
         np.random.seed(0)
+        if nb_samples > len(paths):
+            raise ValueError(
+                'Error: The dataset provided in paths_train_data.txt contains less data than required by nb_samples, please review the input files.'
+            )
         self.idxs = utils.generate_random_numbers(nb_samples, 0, len(paths))
+        print(self.idxs)
         self.path = paths[self.idxs]
 
         ## select a random test path, that is not in the training set
@@ -212,7 +218,8 @@ class CSEdata(Dataset):
             p_transf), torch.from_numpy(delta_t_transf)
 
 
-def get_data(data_type,nb_samples, dt_fract, nb_test, inpackage, batch_size, kwargs):
+def get_data(data_type, nb_samples, dt_fract, nb_test, inpackage, batch_size,
+             kwargs):
     '''
     Prepare the data for training and validating the emulator.
 
@@ -233,20 +240,22 @@ def get_data(data_type,nb_samples, dt_fract, nb_test, inpackage, batch_size, kwa
     elif data_type == 'Phantom':
         data_class = PhantomData
     else:
-        print('Error: data_type not recognised (Phantom or 1DCSE), defaulting to 1DCSE')
+        print(
+            'Error: data_type not recognised (Phantom or 1DCSE), defaulting to 1DCSE'
+        )
         data_class = CSEdata
     train = data_class(nb_samples=nb_samples,
-                    dt_fract=dt_fract,
-                    nb_test=nb_test,
-                    inpackage=inpackage,
-                    train=True,
-                    datapath='train')
+                       dt_fract=dt_fract,
+                       nb_test=nb_test,
+                       inpackage=inpackage,
+                       train=True,
+                       datapath='train')
     valid = data_class(nb_samples=nb_samples,
-                    dt_fract=dt_fract,
-                    nb_test=nb_test,
-                    inpackage=inpackage,
-                    train=False,
-                    datapath='train')
+                       dt_fract=dt_fract,
+                       nb_test=nb_test,
+                       inpackage=inpackage,
+                       train=False,
+                       datapath='train')
 
     print('Dataset:')
     print('------------------------------')
@@ -296,14 +305,14 @@ def get_test_data(data_type,
         print('Error: data_type not recognised, defaulting to 1DCSE')
         data_class = CSEdata
         mod_class = CSEmod
-    
+
     data = data_class(nb_samples=meta['nb_samples'],
-                   dt_fract=meta['dt_fract'],
-                   nb_test=meta['nb_test'],
-                   train=train,
-                   fraction=0.7,
-                   cutoff=1e-20,
-                   inpackage=inpackage)
+                      dt_fract=meta['dt_fract'],
+                      nb_test=meta['nb_test'],
+                      train=train,
+                      fraction=0.7,
+                      cutoff=1e-20,
+                      inpackage=inpackage)
 
     mod = mod_class(testpath, inpackage, datapath)
 
@@ -318,9 +327,9 @@ def get_test_data(data_type,
             'name': mod.name,
             'Tstar': mod.Tstar,
             'Mdot': mod.Mdot,
-        'v': mod.v,
-        'eps': mod.eps
-    }
+            'v': mod.v,
+            'eps': mod.eps
+        }
 
     ## physical parameters
     p_transf = np.empty_like(p)
@@ -416,7 +425,7 @@ class CSEmod():
                 inp_path = self.path + 'input.txt'
             if data == 'train':
                 parentpath = str(Path(__file__).parent)[:-15]
-                self.path = parentpath + 'data/train/' + path[:-18] + '/'
+                self.path = parentpath + 'data/train/' + path + '/'
                 self.model = self.path
                 self.name = self.path
                 inp_path = self.path + 'input.txt'
@@ -426,7 +435,8 @@ class CSEmod():
         phys_path = 'csphyspar_smooth.out'
 
         ## retrieve input
-        self.Rstar, self.Tstar, self.Mdot, self.v, self.eps, self.rtol, self.atol = read_input_1Dmodel(inp_path)
+        self.Rstar, self.Tstar, self.Mdot, self.v, self.eps, self.rtol, self.atol = read_input_1Dmodel(
+            inp_path)
 
         ## retrieve abundances
         abs = read_data_1Dmodel(self.path + abs_path)
@@ -436,7 +446,12 @@ class CSEmod():
         arr = np.loadtxt(self.path + phys_path,
                          skiprows=4,
                          usecols=(0, 1, 2, 3, 4))
-        self.radius, self.dens, self.temp, self.Av, self.xi = arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3], arr[:, 4]
+        self.radius, self.dens, self.temp, self.Av, self.xi = arr[:,
+                                                                  0], arr[:,
+                                                                          1], arr[:,
+                                                                                  2], arr[:,
+                                                                                          3], arr[:,
+                                                                                                  4]
         self.time = self.radius / (self.v)
 
     def __len__(self):
@@ -604,18 +619,18 @@ def read_data_1Dmodel(file_name):
 
 ##----------------------- Phantom+krome models ----------------------- ###
 
+
 class Phantommod():
     '''
     Class to load a phantom+krome wind model, calculated using Krome on particle paths from a phantom simulation.
     One output file contains physical parameters and abundances for one particle at all time steps.
     '''
 
-    def __init__(self, path, inpackage=False, data='test'):
+    def __init__(self, path, data='test'):
         '''
         Load the phantom model, given a path.
 
-        The abundances and physical parameters are stored in a file 'particleID.chem'
-        the physical parameters are stored in a file 'csphyspar_smooth.out'.
+        The abundances and physical parameters are stored in a file 'particleID.chem'.
 
         From these paths, retrieve
             - the abundances            --> self.n
@@ -628,26 +643,8 @@ class Phantommod():
             - the time steps            --> self.time
         '''
 
-        if not inpackage:
-            self.path = '/STER/silkem/CHEM/out/' + path[34:-17]
-            self.model = path[34:-51]
-            self.name = path[-43:-18]
-
-        if inpackage:
-            if data == 'test':
-                parentpath = str(Path(__file__).parent)[:-15]
-                print(parentpath)
-                self.path = parentpath + 'data/test/' + path + '/'
-                self.model = path[-62:-1]
-                self.name = path
-            if data == 'train':
-                parentpath = str(Path(__file__).parent)[:-15]
-                self.path = parentpath + 'data/train/' + path
-                self.model = self.path
-                self.name = self.path
-
         ## retrieve abundances and physical parameters
-        print('Loading phantom+krome model from:', self.path)
+        self.path = path
         abs = read_data_phantom(self.path)
         self.time = abs[:, 0]
         self.radius, self.dens, self.temp, self.mu, self.Av, self.xi = abs[:,
@@ -658,8 +655,6 @@ class Phantommod():
                                                                                                            5], abs[:,
                                                                                                                    6]
         self.n = abs[:, 7:]
-
-        #print(self.n[0])
 
     def __len__(self):
         '''
@@ -745,6 +740,7 @@ class Phantommod():
         return delta_t.astype(np.float64), n_0D.astype(np.float64), p.T.astype(
             np.float64)  # type: ignore
 
+
 def read_data_phantom(file_name):
     '''
     Read data text file of output abundances of phantom+krome models.
@@ -756,6 +752,7 @@ def read_data_phantom(file_name):
             if not line.startswith(' #'):
                 data.append([float(_) for _ in line.strip().split()])
     return np.array(data)
+
 
 class PhantomData(Dataset):
     '''
@@ -792,7 +789,7 @@ class PhantomData(Dataset):
             - take np.log10 of abudances
 
         Structure:
-            1. Load the paths of the 1D models
+            1. Load the paths of the models
             2. Select a certain number of paths, given by nb_samples 
                 --> self.path
             3. Select a random test path, that is not in the training set 
@@ -813,13 +810,25 @@ class PhantomData(Dataset):
         print('> Train state:', train)
 
         loc = str(Path().cwd()) + '/'
-        paths = np.loadtxt(loc + 'data/paths_train_data.txt', dtype=str)
+        # atleast_1d to ensure path is an array, because loadtxt returns an array scalar (0D array) 
+        # if only one path is is in the path file
+        path = np.atleast_1d(np.loadtxt(loc + 'data/paths_train_data.txt', dtype=str))
+        # get path of all files in path
+        paths = np.array([])
+        for p in path:
+            paths = np.append(paths,
+                            [os.path.join(p, _) for _ in os.listdir(p)])
+        paths = paths.flatten()
         print('Found paths:', len(paths))
+
         ## select a certain number of paths, given by nb_samples
         np.random.seed(0)
+        if nb_samples > len(paths):
+            raise ValueError(
+                'Error: The dataset provided in paths_train_data.txt contains less data than required by nb_samples, please review the input files.'
+            )
         self.idxs = utils.generate_random_numbers(nb_samples, 0, len(paths))
         self.path = paths[self.idxs]
-        print(self.path)
 
         ## select a random test path, that is not in the training set
         self.testpath = list()
@@ -903,9 +912,8 @@ class PhantomData(Dataset):
 
         Returns the preprocessed data in torch tensors.
         '''
-        mod = Phantommod(self.path[idx],
-                     inpackage=self.inpackage,
-                     data=self.datapath)
+        print('Loading phantom+krome model from:', self.path[idx])
+        mod = Phantommod(self.path[idx], data=self.datapath)
 
         delta_t, n, p = mod.split_in_0D()
 
