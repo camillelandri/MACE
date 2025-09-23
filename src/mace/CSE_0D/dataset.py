@@ -30,7 +30,9 @@ from torch.utils.data import Dataset, DataLoader
 import src.mace.utils as utils
 from pathlib import Path
 
-specs_dict, idx_specs = utils.get_specs()
+specs_dict = utils.get_specs()
+
+AU_to_cm = 1.495978707e13
 
 ### ----------------------- 1D CSE models ----------------------- ###
 
@@ -314,22 +316,26 @@ def get_test_data(data_type,
                       cutoff=1e-20,
                       inpackage=inpackage)
 
-    mod = mod_class(testpath, inpackage, datapath)
+    if data_type == 'Phantom':
+        mod = mod_class(testpath, datapath)
+        name = {'path': testpath, 'name': testpath.split('/')[-1]}
+    else:
+        mod = mod_class(testpath, inpackage=inpackage, data=datapath)
 
-    if inpackage:
-        input = mod.get_input()
+        if inpackage:
+            input = mod.get_input()
 
+        if data_class == CSEdata:
+            # specifics of the 1DCSE model
+            name = {
+                'path': testpath[49:-57],
+                'name': mod.name,
+                'Tstar': mod.Tstar,
+                'Mdot': mod.Mdot,
+                'v': mod.v,
+                'eps': mod.eps
+            }
     delta_t, n, p = mod.split_in_0D()
-    if data_class == CSEdata:
-        # specifics of the 1DCSE model
-        name = {
-            'path': testpath[49:-57],
-            'name': mod.name,
-            'Tstar': mod.Tstar,
-            'Mdot': mod.Mdot,
-            'v': mod.v,
-            'eps': mod.eps
-        }
 
     ## physical parameters
     p_transf = np.empty_like(p)
@@ -647,13 +653,8 @@ class Phantommod():
         self.path = path
         abs = read_data_phantom(self.path)
         self.time = abs[:, 0]
-        self.radius, self.dens, self.temp, self.mu, self.Av, self.xi = abs[:,
-                                                                           1], abs[:,
-                                                                                   2], abs[:,
-                                                                                           3], abs[:,
-                                                                                                   4], abs[:,
-                                                                                                           5], abs[:,
-                                                                                                                   6]
+        self.radius = abs[:,1] * AU_to_cm
+        self.dens, self.temp, self.mu, self.Av, self.xi = abs[:, 2], abs[:, 3], abs[:, 4], abs[:, 5], abs[:, 6]
         self.n = abs[:, 7:]
 
     def __len__(self):
@@ -734,7 +735,7 @@ class Phantommod():
             self.get_dens()[:-1],
             self.get_temp()[:-1],
             self.get_xi()[:-1] + y,
-            self.get_Av()[:-1]
+            self.get_Av()[:-1] + y
         ])
 
         return delta_t.astype(np.float64), n_0D.astype(np.float64), p.T.astype(
@@ -810,7 +811,7 @@ class PhantomData(Dataset):
         print('> Train state:', train)
 
         loc = str(Path().cwd()) + '/'
-        # atleast_1d to ensure path is an array, because loadtxt returns an array scalar (0D array) 
+        # atleast_1d to ensure path is an array, because loadtxt returns an array scalar (0D array)
         # if only one path is is in the path file
         path = np.atleast_1d(np.loadtxt(loc + 'data/paths_train_data.txt', dtype=str))
         # get path of all files in path
@@ -855,8 +856,8 @@ class PhantomData(Dataset):
         y = 1.e-100  ## this number is added to xi, since it contains zeros
         self.logdelta_min = np.log10(y + minmax['delta_min'])
         self.logdelta_max = np.log10(y + minmax['delta_max'])
-        self.Av_min = np.log10(minmax['Av_min'])
-        self.Av_max = np.log10(minmax['Av_max'])
+        self.Av_min = np.log10(y + minmax['Av_min'])
+        self.Av_max = np.log10(y + minmax['Av_max'])
         self.dt_max = minmax['dt_max']
         self.dt_fract = dt_fract
         self.n_min = np.log10(cutoff)
@@ -897,7 +898,7 @@ class PhantomData(Dataset):
         '''
         Get the data of the idx-th 1D model.
 
-        The CSEmod class is used to get the data of the 1D model.
+        The phantommod class is used to get the data of the phantom model.
         Subsequently, this data is preprocessed:
             - abundances (n) are
                 - clipped to the cutoff value
