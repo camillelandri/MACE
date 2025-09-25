@@ -818,8 +818,11 @@ class PhantomData(Dataset):
         # get path of all files in path
         paths = np.array([])
         for p in path:
-            paths = np.append(paths,
-                            [os.path.join(p, _) for _ in os.listdir(p)])
+            # decode if path is bytes
+            ps = os.listdir(p)
+            if isinstance(ps[0], bytes):
+                ps = [_.decode('utf-8') for _ in ps]
+            paths = np.append(paths, [os.path.join(p, _) for _ in ps])
         paths = paths.flatten()
         print('Found paths:', len(paths))
 
