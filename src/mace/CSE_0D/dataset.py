@@ -131,6 +131,7 @@ def get_test_data(data_type,
                       inpackage=inpackage)
 
     if data_type == 'Phantom':
+        # no need for input data for the phantom models
         mod = mod_class(testpath, datapath)
         name = {'path': testpath, 'name': testpath.split('/')[-1]}
     else:
@@ -653,6 +654,8 @@ class Phantommod():
         ## retrieve abundances and physical parameters
         self.path = path
         abs = read_data_phantom(self.path)
+        if len(abs[:, 0]) < 10:
+            raise ValueError(f'Warning: {self.path} has less than 10 time steps, skipping this model.')
         self.time = abs[:, 0]
         self.radius = abs[:,1] * AU_to_cm
         self.dens, self.temp, self.mu, self.Av, self.xi = abs[:, 2], abs[:, 3], abs[:, 4], abs[:, 5], abs[:, 6]
@@ -845,7 +848,6 @@ class PhantomData(Dataset):
             if self.test_idx not in self.idxs:
                 count += 1
                 self.testpath.append(paths[self.test_idx][0])
-            print('count:', count, '\r', end='')
         print('Selected test paths:', len(self.testpath))
 
         self.M = np.load(loc + 'data/M_rate16.npy')
@@ -919,7 +921,6 @@ class PhantomData(Dataset):
         '''
         print('Loading phantom+krome model from:', self.path[idx])
         mod = Phantommod(self.path[idx], data=self.datapath)
-
         delta_t, n, p = mod.split_in_0D()
 
         ## physical parameters
