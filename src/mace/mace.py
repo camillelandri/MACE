@@ -14,6 +14,12 @@ import torchode             as to      # Lienen, M., & Günnemann, S. 2022, in T
 import src.mace.autoencoder as ae
 import src.mace.latentODE   as lODE
 from time                   import time
+import resource
+import os
+
+def _mem(tag=""):
+    rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # Linux: KB
+    print(f"[MEM] {tag} maxrss={rss_kb/1024/1024:.3f} GB", flush=True)
 
 
 class Solver(nn.Module):
@@ -189,11 +195,19 @@ class Solver(nn.Module):
         )
 
         ## Solve initial value problem. Details are set in the __init__() of this class.
+        _mem(f"solving initial value problem with shape {z_0.shape}...")
         tic = time()
+        print(f"Exact y0 of the problem is {z_0.to(self.DEVICE).shape}")
+        print(f"Exact t_eval of the problem is {tstep.view(z_0.shape[0], -1).to(self.DEVICE).shape}")
+        print(f"Exact t_start of the problem is {t_start.shape}")
+        print(f"Exact t_end of the problem is {t_end.shape}")
         solution = self.jit_solver.solve(problem, args=p)
         toc = time()
         solve_time = toc - tic
+        _mem(f"solution obtained in {solve_time} seconds")
         z_s = solution.ys.view(-1, self.z_dim)  ## want batches
+        _mem(f"reshaped solution to {z_s.shape}")
+
         ## Decode the resulting values from latent space z_s back to physical space
         tic = time()
         n_s_ravel = self.decoder(z_s)
